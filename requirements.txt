@@ -3,3 +3,4 @@ ultralytics
 torch
 kaggle
 pyyaml
+opencv-python
