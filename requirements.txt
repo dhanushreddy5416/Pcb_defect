@@ -3,5 +3,5 @@ ultralytics
 torch
 kaggle
 pyyaml
-opencv-python
+opencv-python-headless
 
