@@ -1,28 +1,25 @@
-import os
-import zipfile
-
-# Define directory
-base_dir = "/mnt/data/pcb_yolo_app"
-os.makedirs(base_dir, exist_ok=True)
-
-# Define the final working app.py (auto download from Kaggle, create data.yaml)
-app_code = '''\
 import streamlit as st
 import os
 from pathlib import Path
 from ultralytics import YOLO
 import subprocess
 import torch
+from PIL import Image, ImageDraw, ImageFont
 
+# Streamlit setup
 st.set_page_config(page_title="PCB Defect Detector", layout="wide")
 st.title("🔍 PCB Defect Detection using YOLO + DenseNet")
 
-st.header("Step 1: Provide Kaggle Credentials")
-kaggle_file = st.file_uploader("Upload your kaggle.json", type=["json"])
-
+# Safe paths for Streamlit Cloud
 kaggle_dir = Path("/tmp/.kaggle")
-base_path = Path("pcb_dataset/pcb-defect-dataset")
+base_path = Path("/tmp/pcb_dataset/pcb-defect-dataset")
 yaml_path = base_path / "data.yaml"
+model_dir = Path("/tmp/pcb_yolo_densenet/yolo_pcb_defects/weights")
+model_path = model_dir / "best.pt"
+
+# Step 1: Upload kaggle.json
+st.header("Step 1: Upload kaggle.json")
+kaggle_file = st.file_uploader("Upload your kaggle.json", type=["json"])
 
 if kaggle_file:
     os.makedirs(kaggle_dir, exist_ok=True)
@@ -33,110 +30,107 @@ if kaggle_file:
     os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_dir)
     st.success("✅ kaggle.json uploaded and saved")
 
+    # Step 2: Download Dataset
     if st.button("📥 Download PCB Defect Dataset from Kaggle"):
         try:
-            os.makedirs("pcb_dataset", exist_ok=True)
+            os.makedirs(base_path.parent, exist_ok=True)
             command = [
                 "kaggle", "datasets", "download",
                 "-d", "norbertelter/pcb-defect-dataset",
-                "-p", "pcb_dataset", "--unzip"
+                "-p", str(base_path.parent), "--unzip"
             ]
             result = subprocess.run(command, capture_output=True, text=True)
             if result.returncode == 0:
                 st.success("✅ Dataset downloaded and extracted!")
 
-                # Create data.yaml
+                # Step 3: Create data.yaml
                 os.makedirs(base_path, exist_ok=True)
-                yaml_content = {
-                    'path': str(base_path.resolve()),
-                    'train': 'train/images',
-                    'val': 'val/images',
-                    'test': 'test/images',
-                    'names': [
-                        'missing_hole',
-                        'mouse_bite',
-                        'open_circuit',
-                        'short',
-                        'spur',
-                        'spurious_copper'
-                    ]
-                }
                 with open(yaml_path, 'w') as f:
                     f.write(
-                        f"path: {yaml_content['path']}\n"
-                        f"train: {yaml_content['train']}\n"
-                        f"val: {yaml_content['val']}\n"
-                        f"test: {yaml_content['test']}\n"
-                        f"names:\n" +
-                        "\\n".join([f"  {i}: {name}" for i, name in enumerate(yaml_content['names'])])
+                        f"path: {base_path.resolve()}\n"
+                        f"train: train/images\n"
+                        f"val: val/images\n"
+                        f"test: test/images\n"
+                        f"names:\n"
+                        f"  0: missing_hole\n"
+                        f"  1: mouse_bite\n"
+                        f"  2: open_circuit\n"
+                        f"  3: short\n"
+                        f"  4: spur\n"
+                        f"  5: spurious_copper\n"
                     )
-                st.success("✅ data.yaml created successfully!")
+                st.success("✅ data.yaml created!")
             else:
-                st.error(f"❌ Error: {result.stderr}")
+                st.error(f"❌ Kaggle Error: {result.stderr}")
         except Exception as e:
-            st.error(f"❌ Exception: {e}")
+            st.error(f"❌ Download Exception: {e}")
 
+# Step 4: Train YOLOv8 Model
 st.header("Step 2: Train YOLOv8 Model")
 if st.button("🚀 Train Model"):
     if not yaml_path.exists():
-        st.error("❌ data.yaml not found. Please download dataset first.")
+        st.error("❌ data.yaml not found. Please download the dataset first.")
     else:
         try:
             model = YOLO("yolov8s.pt")
-            result = model.train(
+            model.train(
                 data=str(yaml_path),
                 epochs=10,
                 imgsz=640,
                 batch=8,
                 name="yolo_pcb_defects",
-                project="pcb_yolo_densenet",
+                project="/tmp/pcb_yolo_densenet",
                 device=0 if torch.cuda.is_available() else 'cpu'
             )
             st.success("✅ Training complete!")
         except Exception as e:
-            st.error(f"❌ Error during training: {e}")
-'''
+            st.error(f"❌ Training Error: {e}")
 
-# Save app.py
-with open(os.path.join(base_dir, "app.py"), "w") as f:
-    f.write(app_code)
+# Step 5: Upload Image & Detect Defects
+st.header("Step 3: Upload Test Image for Detection")
+uploaded_img = st.file_uploader("Upload a PCB image", type=["jpg", "jpeg", "png"])
 
-# requirements.txt
-requirements = '''\
-streamlit==1.32.2
-ultralytics==8.0.170
-torch==2.1.0
-opencv-python-headless==4.8.0.74
-Pillow
-matplotlib
-pyyaml
-'''
+if uploaded_img and model_path.exists():
+    try:
+        # Load image and model
+        image = Image.open(uploaded_img).convert("RGB")
+        model = YOLO(str(model_path))
+        draw = ImageDraw.Draw(image)
 
-with open(os.path.join(base_dir, "requirements.txt"), "w") as f:
-    f.write(requirements)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        except:
+            font = ImageFont.load_default()
 
-# packages.txt
-packages = '''\
-git
-wget
-ffmpeg
-kaggle
-'''
+        results = model.predict(source=image, conf=0.25)
+        boxes = results[0].boxes
 
-with open(os.path.join(base_dir, "packages.txt"), "w") as f:
-    f.write(packages)
+        if boxes is None or len(boxes) == 0:
+            st.warning("❌ No defects detected.")
+        else:
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls_id = int(box.cls[0])
+                label = model.names[cls_id]
 
-# runtime.txt
-with open(os.path.join(base_dir, "runtime.txt"), "w") as f:
-    f.write("python-3.10")
+                text_size = draw.textbbox((x1, y1), label, font=font)
+                text_width = text_size[2] - text_size[0]
+                text_height = text_size[3] - text_size[1]
 
-# Create zip
-zip_path = "/mnt/data/pcb_yolo_streamlit_app.zip"
-with zipfile.ZipFile(zip_path, "w") as zipf:
-    for root, dirs, files in os.walk(base_dir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            arcname = os.path.relpath(file_path, base_dir)
-            zipf.write(file_path, arcname)
+                draw.rectangle(
+                    [(x1, y1 - text_height - 10), (x1 + text_width + 10, y1)],
+                    fill="white"
+                )
+                draw.text((x1 + 5, y1 - text_height - 5), label, fill="black", font=font)
+                draw.rectangle([(x1, y1), (x2, y2)], outline="white", width=3)
 
-zip_path
+            # Resize for display
+            max_width = 600
+            w_percent = max_width / float(image.size[0])
+            h_size = int((float(image.size[1]) * float(w_percent)))
+            image = image.resize((max_width, h_size), Image.Resampling.LANCZOS)
+            st.image(image, caption="🔍 Detected Defects", use_column_width=False)
+    except Exception as e:
+        st.error(f"❌ Detection Error: {e}")
+elif uploaded_img and not model_path.exists():
+    st.warning("⚠️ Model not trained yet. Please train the model first.")
