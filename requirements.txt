@@ -1,8 +1,7 @@
 streamlit
 ultralytics
 torch
-kaggle
+opencv-python
+Pillow
+matplotlib
 pyyaml
-opencv-python-headless==4.7.0.72
-
-
