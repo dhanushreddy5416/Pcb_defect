@@ -1,7 +1,7 @@
-streamlit
-ultralytics
-torch
-opencv-python-headless
+streamlit==1.32.2
+ultralytics==8.0.170
+torch==2.1.0
+opencv-python-headless==4.8.0.74
 Pillow
 matplotlib
 pyyaml
