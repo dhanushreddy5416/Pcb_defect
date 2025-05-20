@@ -1,3 +1,12 @@
+import os
+import zipfile
+
+# Define directory
+base_dir = "/mnt/data/pcb_yolo_app"
+os.makedirs(base_dir, exist_ok=True)
+
+# Define the final working app.py (auto download from Kaggle, create data.yaml)
+app_code = '''\
 import streamlit as st
 import os
 from pathlib import Path
@@ -5,15 +14,12 @@ from ultralytics import YOLO
 import subprocess
 import torch
 
-# Set Streamlit page config
 st.set_page_config(page_title="PCB Defect Detector", layout="wide")
 st.title("🔍 PCB Defect Detection using YOLO + DenseNet")
 
-# Step 1: Upload kaggle.json
 st.header("Step 1: Provide Kaggle Credentials")
 kaggle_file = st.file_uploader("Upload your kaggle.json", type=["json"])
 
-# Use /tmp directory to avoid permission issues
 kaggle_dir = Path("/tmp/.kaggle")
 base_path = Path("pcb_dataset/pcb-defect-dataset")
 yaml_path = base_path / "data.yaml"
@@ -27,7 +33,6 @@ if kaggle_file:
     os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_dir)
     st.success("✅ kaggle.json uploaded and saved")
 
-    # Step 2: Download dataset using Kaggle API
     if st.button("📥 Download PCB Defect Dataset from Kaggle"):
         try:
             os.makedirs("pcb_dataset", exist_ok=True)
@@ -63,7 +68,7 @@ if kaggle_file:
                         f"val: {yaml_content['val']}\n"
                         f"test: {yaml_content['test']}\n"
                         f"names:\n" +
-                        "\n".join([f"  {i}: {name}" for i, name in enumerate(yaml_content['names'])])
+                        "\\n".join([f"  {i}: {name}" for i, name in enumerate(yaml_content['names'])])
                     )
                 st.success("✅ data.yaml created successfully!")
             else:
@@ -71,13 +76,12 @@ if kaggle_file:
         except Exception as e:
             st.error(f"❌ Exception: {e}")
 
-# Step 3: Train YOLOv8 model
 st.header("Step 2: Train YOLOv8 Model")
 if st.button("🚀 Train Model"):
-    try:
-        if not yaml_path.exists():
-            st.error("❌ data.yaml not found. Please download dataset first.")
-        else:
+    if not yaml_path.exists():
+        st.error("❌ data.yaml not found. Please download dataset first.")
+    else:
+        try:
             model = YOLO("yolov8s.pt")
             result = model.train(
                 data=str(yaml_path),
@@ -89,5 +93,50 @@ if st.button("🚀 Train Model"):
                 device=0 if torch.cuda.is_available() else 'cpu'
             )
             st.success("✅ Training complete!")
-    except Exception as e:
-        st.error(f"❌ Error during training: {e}")
+        except Exception as e:
+            st.error(f"❌ Error during training: {e}")
+'''
+
+# Save app.py
+with open(os.path.join(base_dir, "app.py"), "w") as f:
+    f.write(app_code)
+
+# requirements.txt
+requirements = '''\
+streamlit==1.32.2
+ultralytics==8.0.170
+torch==2.1.0
+opencv-python-headless==4.8.0.74
+Pillow
+matplotlib
+pyyaml
+'''
+
+with open(os.path.join(base_dir, "requirements.txt"), "w") as f:
+    f.write(requirements)
+
+# packages.txt
+packages = '''\
+git
+wget
+ffmpeg
+kaggle
+'''
+
+with open(os.path.join(base_dir, "packages.txt"), "w") as f:
+    f.write(packages)
+
+# runtime.txt
+with open(os.path.join(base_dir, "runtime.txt"), "w") as f:
+    f.write("python-3.10")
+
+# Create zip
+zip_path = "/mnt/data/pcb_yolo_streamlit_app.zip"
+with zipfile.ZipFile(zip_path, "w") as zipf:
+    for root, dirs, files in os.walk(base_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            arcname = os.path.relpath(file_path, base_dir)
+            zipf.write(file_path, arcname)
+
+zip_path
