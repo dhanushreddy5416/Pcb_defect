@@ -1,14 +1,3 @@
-import os
-import zipfile
-
-# Define folder structure and content
-base_dir = "/mnt/data/pcb_defect_detector"
-streamlit_dir = os.path.join(base_dir, ".streamlit")
-os.makedirs(streamlit_dir, exist_ok=True)
-
-# File contents
-files = {
-    "app.py": '''
 import streamlit as st
 import os
 from pathlib import Path
@@ -16,23 +5,29 @@ from ultralytics import YOLO
 import subprocess
 import torch
 
+# Set Streamlit page config
 st.set_page_config(page_title="PCB Defect Detector", layout="wide")
 st.title("🔍 PCB Defect Detection using YOLO + DenseNet")
 
+# Step 1: Upload kaggle.json
 st.header("Step 1: Provide Kaggle Credentials")
 kaggle_file = st.file_uploader("Upload your kaggle.json", type=["json"])
 
+# Use /tmp directory to avoid permission issues
+kaggle_dir = Path("/tmp/.kaggle")
 base_path = Path("pcb_dataset/pcb-defect-dataset")
 yaml_path = base_path / "data.yaml"
 
 if kaggle_file:
-    os.makedirs(Path.home()/".kaggle", exist_ok=True)
-    kaggle_path = Path.home()/".kaggle"/"kaggle.json"
+    os.makedirs(kaggle_dir, exist_ok=True)
+    kaggle_path = kaggle_dir / "kaggle.json"
     with open(kaggle_path, "wb") as f:
         f.write(kaggle_file.read())
     os.chmod(kaggle_path, 0o600)
+    os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_dir)
     st.success("✅ kaggle.json uploaded and saved")
 
+    # Step 2: Download dataset using Kaggle API
     if st.button("📥 Download PCB Defect Dataset from Kaggle"):
         try:
             os.makedirs("pcb_dataset", exist_ok=True)
@@ -45,6 +40,8 @@ if kaggle_file:
             if result.returncode == 0:
                 st.success("✅ Dataset downloaded and extracted!")
 
+                # Create data.yaml
+                os.makedirs(base_path, exist_ok=True)
                 yaml_content = {
                     'path': str(base_path.resolve()),
                     'train': 'train/images',
@@ -66,7 +63,7 @@ if kaggle_file:
                         f"val: {yaml_content['val']}\n"
                         f"test: {yaml_content['test']}\n"
                         f"names:\n" +
-                        "\\n".join([f"  {i}: {name}" for i, name in enumerate(yaml_content['names'])])
+                        "\n".join([f"  {i}: {name}" for i, name in enumerate(yaml_content['names'])])
                     )
                 st.success("✅ data.yaml created successfully!")
             else:
@@ -74,6 +71,7 @@ if kaggle_file:
         except Exception as e:
             st.error(f"❌ Exception: {e}")
 
+# Step 3: Train YOLOv8 model
 st.header("Step 2: Train YOLOv8 Model")
 if st.button("🚀 Train Model"):
     try:
@@ -93,49 +91,3 @@ if st.button("🚀 Train Model"):
             st.success("✅ Training complete!")
     except Exception as e:
         st.error(f"❌ Error during training: {e}")
-''',
-
-    "requirements.txt": '''streamlit==1.32.2
-ultralytics==8.0.170
-torch==2.1.0
-opencv-python-headless==4.8.0.74
-Pillow
-matplotlib
-pyyaml
-''',
-
-    "packages.txt": '''git
-wget
-ffmpeg
-kaggle
-''',
-
-    "runtime.txt": "python-3.10",
-
-    ".streamlit/config.toml": '''[theme]
-base="light"
-primaryColor="#8e44ad"
-backgroundColor="#ffffff"
-secondaryBackgroundColor="#f5f5f5"
-textColor="#262730"
-font="sans serif"
-'''
-}
-
-# Write all files
-for filename, content in files.items():
-    path = os.path.join(base_dir, filename)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
-
-# Create a zip file
-zip_path = "/mnt/data/pcb_defect_detector.zip"
-with zipfile.ZipFile(zip_path, "w") as zipf:
-    for foldername, subfolders, filenames in os.walk(base_dir):
-        for filename in filenames:
-            filepath = os.path.join(foldername, filename)
-            arcname = os.path.relpath(filepath, base_dir)
-            zipf.write(filepath, arcname)
-
-zip_path
